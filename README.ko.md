@@ -23,6 +23,12 @@
 2. **Habit Tracker** 검색
 3. 설치 후 활성화
 
+### BRAT 경유 설치 (베타 테스트용)
+1. 커뮤니티 플러그인에서 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 설치
+2. BRAT 설정 → **Add Beta plugin** 클릭
+3. `https://github.com/KentaMaeda0616/obsidian-habit-tracker` 입력
+4. **Add Plugin** 클릭 후 설정 → 커뮤니티 플러그인에서 활성화
+
 ### 수동 설치
 1. [최신 릴리즈](https://github.com/KentaMaeda0916/obsidian-habit-tracker/releases/latest)에서 `main.js`, `manifest.json`, `styles.css` 다운로드
 2. `.obsidian/plugins/habit-tracker/`에 복사

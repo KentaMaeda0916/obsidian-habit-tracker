@@ -23,8 +23,14 @@ A simple, focused habit tracker plugin for [Obsidian](https://obsidian.md). One 
 2. Search for **Habit Tracker**
 3. Click Install, then Enable
 
+### Via BRAT (for beta testing)
+1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from Community Plugins
+2. Open BRAT settings → **Add Beta plugin**
+3. Enter `https://github.com/KentaMaeda0616/obsidian-habit-tracker`
+4. Click **Add Plugin**, then enable it in Settings → Community Plugins
+
 ### Manual Installation
-1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/KentaMaeda0916/obsidian-habit-tracker/releases/latest)
+1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/KentaMaeda0616/obsidian-habit-tracker/releases/latest)
 2. Copy them to your vault: `.obsidian/plugins/habit-tracker/`
 3. Enable the plugin in Settings → Community Plugins
 
