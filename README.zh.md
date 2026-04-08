@@ -23,8 +23,14 @@
 2. 搜索 **Habit Tracker**
 3. 点击安装，然后启用
 
+### 通过 BRAT 安装（测试版）
+1. 从社区插件安装 [BRAT](https://github.com/TfTHacker/obsidian42-brat)
+2. 打开 BRAT 设置 → **Add Beta plugin**
+3. 输入 `https://github.com/KentaMaeda0916/obsidian-habit-tracker`
+4. 点击 **Add Plugin**，然后在设置 → 社区插件中启用
+
 ### 手动安装
-1. 从[最新发布页面](https://github.com/KentaMaeda0916/obsidian-habit-tracker/releases/latest)下载 `main.js`、`manifest.json`、`styles.css`
+1. 从[最新发布页面](https://github.com/KentaMaeda0616/obsidian-habit-tracker/releases/latest)下载 `main.js`、`manifest.json`、`styles.css`
 2. 复制到 `.obsidian/plugins/habit-tracker/`
 3. 在设置 → 社区插件中启用
 

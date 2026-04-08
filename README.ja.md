@@ -23,6 +23,12 @@
 2. **Habit Tracker** を検索
 3. インストール → 有効化
 
+### BRAT 経由（ベータテスト用）
+1. コミュニティプラグインから [BRAT](https://github.com/TfTHacker/obsidian42-brat) をインストール
+2. BRAT の設定 → **Add Beta plugin** をクリック
+3. `https://github.com/KentaMaeda0616/obsidian-habit-tracker` を入力
+4. **Add Plugin** をクリックし、設定 → コミュニティプラグイン で有効化
+
 ### 手動インストール
 1. [最新リリース](https://github.com/KentaMaeda0916/obsidian-habit-tracker/releases/latest) から `main.js`、`manifest.json`、`styles.css` をダウンロード
 2. Vault の `.obsidian/plugins/habit-tracker/` にコピー
