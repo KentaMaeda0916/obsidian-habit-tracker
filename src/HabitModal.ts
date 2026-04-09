@@ -1,4 +1,4 @@
-import { App, Modal, Setting } from "obsidian";
+import { App, Modal, Notice, Setting } from "obsidian";
 import HabitTrackerPlugin from "./main";
 
 export class HabitModal extends Modal {
@@ -42,11 +42,20 @@ export class HabitModal extends Modal {
 				.setButtonText("追加")
 				.setCta()
 				.onClick(async () => {
-					const name = this.habitName.trim();
-					if (!name) return;
-					// ファイル名に使えない文字を除去
-					const safeName = name.replace(/[\\/:*?"<>|#^[\]]/g, "_");
-					await this.plugin.storage.createHabit(safeName, this.description.trim());
+					const displayName = this.habitName.trim();
+					if (!displayName) return;
+
+					// ファイル名に使えない文字を除去（表示名とは別管理）
+					const filename = displayName.replace(/[\\/:*?"<>|#^[\]]/g, "_");
+
+					// 重複チェック
+					const existing = await this.plugin.storage.loadHabit(filename);
+					if (existing) {
+						new Notice(`「${displayName}」はすでに存在します`);
+						return;
+					}
+
+					await this.plugin.storage.createHabit(filename, displayName, this.description.trim());
 					await this.onSubmit();
 					this.close();
 				})

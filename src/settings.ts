@@ -6,7 +6,7 @@ export interface HabitTrackerSettings {
 }
 
 export const DEFAULT_SETTINGS: HabitTrackerSettings = {
-	habitsFolder: "habits",
+	habitsFolder: "habits/tracker",
 };
 
 export class HabitTrackerSettingTab extends PluginSettingTab {
@@ -26,10 +26,10 @@ export class HabitTrackerSettingTab extends PluginSettingTab {
 			.setDesc("習慣データを保存するフォルダのパス（Dataviewでクエリする際に使用）")
 			.addText(text =>
 				text
-					.setPlaceholder("habits")
+					.setPlaceholder(DEFAULT_SETTINGS.habitsFolder)
 					.setValue(this.plugin.settings.habitsFolder)
 					.onChange(async value => {
-						this.plugin.settings.habitsFolder = value.trim() || "habits";
+						this.plugin.settings.habitsFolder = value.trim() || DEFAULT_SETTINGS.habitsFolder;
 						await this.plugin.saveSettings();
 					})
 			);

@@ -1,11 +1,14 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import HabitTrackerPlugin from "./main";
+import { Habit, todayString } from "./HabitStorage";
 import { HabitModal } from "./HabitModal";
 
 export const HABIT_TRACKER_VIEW_TYPE = "habit-tracker-view";
 
 export class HabitView extends ItemView {
 	private plugin: HabitTrackerPlugin;
+	private habits: Habit[] = [];
+	private today = "";
 
 	constructor(leaf: WorkspaceLeaf, plugin: HabitTrackerPlugin) {
 		super(leaf);
@@ -30,11 +33,20 @@ export class HabitView extends ItemView {
 
 	async onClose() {}
 
+	/** ディスクから全習慣を再読み込みして表示を更新 */
 	async render() {
+		this.habits = await this.plugin.storage.loadAllHabits();
+		this.renderUI();
+	}
+
+	/** キャッシュ済みデータで表示のみ更新（ディスク読み込みなし） */
+	private renderUI() {
+		// 日付跨ぎに対応するため毎回取得
+		this.today = todayString();
+
 		const root = this.containerEl.children[1];
 		root.empty();
 
-		const today = new Date().toISOString().split("T")[0];
 		const displayDate = new Date().toLocaleDateString("ja-JP", {
 			year: "numeric",
 			month: "long",
@@ -55,19 +67,18 @@ export class HabitView extends ItemView {
 		header.createEl("p", { text: displayDate, cls: "habit-tracker-date" });
 
 		// 習慣リスト
-		const habits = await this.plugin.storage.loadAllHabits();
 		const listEl = container.createEl("div", { cls: "habit-tracker-list" });
 
-		if (habits.length === 0) {
+		if (this.habits.length === 0) {
 			listEl.createEl("p", {
 				text: "習慣がまだありません。下のボタンから追加してください。",
 				cls: "habit-tracker-empty",
 			});
 		}
 
-		for (const habit of habits) {
-			const isCompleted = habit.completions.includes(today);
-			const streak = this.plugin.storage.calculateStreak(habit.completions, today);
+		for (const habit of this.habits) {
+			const isCompleted = habit.completions.includes(this.today);
+			const streak = this.plugin.storage.calculateStreak(habit.completions, this.today);
 
 			const itemEl = listEl.createEl("div", {
 				cls: `habit-tracker-item${isCompleted ? " completed" : ""}`,
@@ -77,12 +88,19 @@ export class HabitView extends ItemView {
 			checkbox.type = "checkbox";
 			checkbox.checked = isCompleted;
 			checkbox.addEventListener("change", async () => {
-				await this.plugin.storage.toggleCompletion(habit.name, today);
-				await this.render();
+				const newState = await this.plugin.storage.toggleCompletion(habit.name, this.today);
+				// in-memory を更新してディスク再読み込みを避ける
+				if (newState) {
+					habit.completions.push(this.today);
+					habit.completions.sort();
+				} else {
+					habit.completions = habit.completions.filter(d => d !== this.today);
+				}
+				this.renderUI();
 			});
 
 			const labelEl = itemEl.createEl("div", { cls: "habit-tracker-label" });
-			labelEl.createEl("span", { text: habit.name, cls: "habit-tracker-name" });
+			labelEl.createEl("span", { text: habit.displayName, cls: "habit-tracker-name" });
 			if (habit.description) {
 				labelEl.createEl("span", { text: habit.description, cls: "habit-tracker-desc" });
 			}
