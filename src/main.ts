@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf } from "obsidian";
+import { Platform, Plugin } from "obsidian";
 import { HabitView, HABIT_TRACKER_VIEW_TYPE } from "./HabitView";
 import { HabitStorage } from "./HabitStorage";
 import { HabitTrackerSettings, HabitTrackerSettingTab, DEFAULT_SETTINGS } from "./settings";
@@ -28,8 +28,8 @@ export default class HabitTrackerPlugin extends Plugin {
 
 		this.addSettingTab(new HabitTrackerSettingTab(this.app, this));
 
-		// レイアウト準備完了後にサイドバーを自動表示
-		this.app.workspace.onLayoutReady(() => {
+		this.app.workspace.onLayoutReady(async () => {
+			await this.storage.ensureDashboard();
 			this.activateView();
 		});
 	}
@@ -47,7 +47,9 @@ export default class HabitTrackerPlugin extends Plugin {
 			return;
 		}
 
-		const leaf = workspace.getRightLeaf(false);
+		const leaf = Platform.isDesktop
+			? workspace.getRightLeaf(false)
+			: workspace.getLeaf("tab");
 		if (leaf) {
 			await leaf.setViewState({ type: HABIT_TRACKER_VIEW_TYPE, active: true });
 			workspace.revealLeaf(leaf);
