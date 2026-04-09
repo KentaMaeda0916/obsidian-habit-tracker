@@ -24,6 +24,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 22px;
+  height: 22px;
   background: transparent;
   border: none;
   padding: 4px;
@@ -31,6 +33,7 @@
   color: var(--text-muted);
   border-radius: 4px;
   transition: color 0.1s ease, background-color 0.1s ease;
+  flex-shrink: 0;
 }
 
 .habit-tracker-refresh-btn:hover {

@@ -88,15 +88,8 @@ export class HabitView extends ItemView {
 			checkbox.type = "checkbox";
 			checkbox.checked = isCompleted;
 			checkbox.addEventListener("change", async () => {
-				const newState = await this.plugin.storage.toggleCompletion(habit.name, this.today);
-				// in-memory を更新してディスク再読み込みを避ける
-				if (newState) {
-					habit.completions.push(this.today);
-					habit.completions.sort();
-				} else {
-					habit.completions = habit.completions.filter(d => d !== this.today);
-				}
-				this.renderUI();
+				await this.plugin.storage.toggleCompletion(habit.name, this.today);
+				await this.render();
 			});
 
 			const labelEl = itemEl.createEl("div", { cls: "habit-tracker-label" });
