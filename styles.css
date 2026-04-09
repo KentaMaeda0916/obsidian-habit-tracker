@@ -8,9 +8,34 @@
   margin-bottom: 8px;
 }
 
-.habit-tracker-header h2 {
-  margin: 0 0 2px 0;
+.habit-tracker-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.habit-tracker-header-top h2 {
+  margin: 0;
   font-size: 1.1em;
+}
+
+.habit-tracker-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: 4px;
+  transition: color 0.1s ease, background-color 0.1s ease;
+}
+
+.habit-tracker-refresh-btn:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
 }
 
 .habit-tracker-date {
