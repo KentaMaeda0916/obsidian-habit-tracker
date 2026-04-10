@@ -28,6 +28,7 @@ export class HabitView extends ItemView {
 	}
 
 	async onOpen() {
+		this.addAction("refresh-cw", "再読み込み", () => this.render());
 		await this.render();
 	}
 
