@@ -24,10 +24,8 @@ export function todayString(): string {
 export class HabitStorage {
 	private app: App;
 	private plugin: HabitTrackerPlugin;
-	/** ローカル書き込み後の読み返しに使う自前キャッシュ */
+	/** ローカル書き込み直後の読み返し用キャッシュ（vault 書き込みタイミングに依存しないため） */
 	private habitCache = new Map<string, Habit>();
-	/** このセッションでローカル書き込みした習慣名（clearCache で evict しない） */
-	private localWrites = new Set<string>();
 
 	constructor(plugin: HabitTrackerPlugin) {
 		this.plugin = plugin;
@@ -151,14 +149,9 @@ if (sorted.length > 0) {
 		return content.replace(/^---\n[\s\S]*?\n---\n/, newFrontmatter);
 	}
 
-	/** キャッシュをクリアする（クロスデバイス同期後の明示的な再読み込みに使用）
-	 *  ローカル書き込み済みエントリは evict しない（vault の書き込みタイミングに依存しないため） */
+	/** キャッシュをクリアする（更新ボタン押下時に呼び出し、ファイルシステムから再読みさせる） */
 	clearCache(): void {
-		for (const name of [...this.habitCache.keys()]) {
-			if (!this.localWrites.has(name)) {
-				this.habitCache.delete(name);
-			}
-		}
+		this.habitCache.clear();
 	}
 
 	async loadHabit(name: string): Promise<Habit | null> {
@@ -166,9 +159,10 @@ if (sorted.length > 0) {
 			const cached = this.habitCache.get(name)!;
 			return { ...cached, completions: [...cached.completions] };
 		}
-		const file = this.app.vault.getAbstractFileByPath(this.habitPath(name));
+		const path = this.habitPath(name);
+		const file = this.app.vault.getAbstractFileByPath(path);
 		if (!(file instanceof TFile)) return null;
-		const content = await this.app.vault.read(file);
+		const content = await this.app.vault.adapter.read(path);
 		const habit = this.parseContent(content, name);
 		this.habitCache.set(name, { ...habit, completions: [...habit.completions] });
 		return habit;
@@ -179,13 +173,12 @@ if (sorted.length > 0) {
 		const path = this.habitPath(habit.name);
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (file instanceof TFile) {
-			const existing = await this.app.vault.read(file);
+			const existing = await this.app.vault.adapter.read(path);
 			await this.app.vault.modify(file, this.replaceFrontmatter(existing, habit));
 		} else {
 			await this.app.vault.create(path, this.buildFullContent(habit));
 		}
-		// 書き込み完了後すぐキャッシュを更新（vault の書き込みタイミングに依存しないため）
-		this.localWrites.add(habit.name);
+		// 書き込み直後にキャッシュを更新（vault.modify のディスク反映タイミングに依存しないため）
 		this.habitCache.set(habit.name, { ...habit, completions: [...habit.completions] });
 	}
 
@@ -201,7 +194,8 @@ if (sorted.length > 0) {
 					const cached = this.habitCache.get(f.basename)!;
 					return { ...cached, completions: [...cached.completions] };
 				}
-				const content = await this.app.vault.cachedRead(f);
+				// vault.adapter.read でキャッシュを一切バイパスしてファイルシステムから直接読む
+				const content = await this.app.vault.adapter.read(f.path);
 				const habit = this.parseContent(content, f.basename);
 				this.habitCache.set(f.basename, { ...habit, completions: [...habit.completions] });
 				return habit;
@@ -226,7 +220,6 @@ if (sorted.length > 0) {
 		if (file instanceof TFile) {
 			await this.app.vault.delete(file);
 		}
-		this.localWrites.delete(name);
 		this.habitCache.delete(name);
 	}
 
