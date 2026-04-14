@@ -123,29 +123,30 @@ describe("calculateStreak", () => {
 // ---------------------------------------------------------------------------
 
 describe("loadHabit / saveHabit / habitCache の挙動", () => {
-	it("初回 loadHabit はキャッシュなしなので vault.cachedRead を呼ぶ", async () => {
+	it("初回 loadHabit はキャッシュなしなので vault.read を呼ぶ", async () => {
 		const { storage, vault } = createMockEnv({
 			"habits/running.md": buildFileContent("Running", "", "2024-01-01", []),
 		});
 		await storage.loadHabit("running");
-		expect(vault.cachedRead).toHaveBeenCalledTimes(1);
+		// saveHabit 内の vault.read（既存ファイルの本文保持用）を除いた呼び出し回数を確認
+		expect(vault.read).toHaveBeenCalledTimes(1);
 	});
 
-	it("saveHabit 後の loadHabit はキャッシュから返す（vault.cachedRead を呼ばない）", async () => {
+	it("saveHabit 後の loadHabit はキャッシュから返す（vault.read を追加で呼ばない）", async () => {
 		const { storage, vault } = createMockEnv({
 			"habits/running.md": buildFileContent("Running", "", "2024-01-01", []),
 		});
 		// 一度ロードしてキャッシュに入れる
 		const habit = await storage.loadHabit("running");
-		vault.cachedRead.mockClear();
+		vault.read.mockClear();
 
-		// 保存 → キャッシュ更新
+		// 保存（saveHabit 内で vault.read を 1 回呼ぶ）
 		await storage.saveHabit(habit!);
-		vault.cachedRead.mockClear();
+		const readCountAfterSave = (vault.read as any).mock.calls.length;
 
-		// 再ロード → キャッシュヒット
+		// 再ロード → キャッシュヒットなので vault.read の呼び出しは増えない
 		await storage.loadHabit("running");
-		expect(vault.cachedRead).not.toHaveBeenCalled();
+		expect(vault.read).toHaveBeenCalledTimes(readCountAfterSave);
 	});
 
 	it("saveHabit はキャッシュを即時更新する（vault が古い内容を返しても正しい値が取れる）", async () => {
@@ -157,9 +158,6 @@ describe("loadHabit / saveHabit / habitCache の挙動", () => {
 		await storage.loadHabit("running");
 
 		// vault が古い内容（completions なし）を返し続けるようにスタブ
-		vault.cachedRead.mockResolvedValue(
-			buildFileContent("Running", "", "2024-01-01", [])
-		);
 		vault.read.mockResolvedValue(
 			buildFileContent("Running", "", "2024-01-01", [])
 		);
@@ -179,19 +177,19 @@ describe("loadHabit / saveHabit / habitCache の挙動", () => {
 		expect(loaded?.completions).toContain("2024-06-01");
 	});
 
-	it("clearCache 後の loadHabit は vault.cachedRead を呼ぶ", async () => {
+	it("clearCache 後の loadHabit は vault.read を呼ぶ（ディスク直読みでクロスデバイス同期を反映）", async () => {
 		const { storage, vault } = createMockEnv({
 			"habits/running.md": buildFileContent("Running", "", "2024-01-01", []),
 		});
 
 		// キャッシュに入れる
 		await storage.loadHabit("running");
-		vault.cachedRead.mockClear();
+		vault.read.mockClear();
 
-		// キャッシュクリア → 再ロードで vault が呼ばれる
+		// キャッシュクリア → 再ロードで vault.read が呼ばれる
 		storage.clearCache();
 		await storage.loadHabit("running");
-		expect(vault.cachedRead).toHaveBeenCalledTimes(1);
+		expect(vault.read).toHaveBeenCalledTimes(1);
 	});
 
 	it("clearCache 後に vault が返す最新内容が反映される（クロスデバイス同期シナリオ）", async () => {
@@ -203,8 +201,8 @@ describe("loadHabit / saveHabit / habitCache の挙動", () => {
 		const before = await storage.loadHabit("running");
 		expect(before?.completions).toHaveLength(0);
 
-		// 別デバイスが同期 → vault.cachedRead が新しい内容を返すようになる
-		vault.cachedRead.mockResolvedValue(
+		// 別デバイスが同期 → vault.read が新しい内容を返すようになる（ディスク更新済み）
+		vault.read.mockResolvedValue(
 			buildFileContent("Running", "", "2024-01-01", ["2024-06-01"])
 		);
 
@@ -212,7 +210,7 @@ describe("loadHabit / saveHabit / habitCache の挙動", () => {
 		const stale = await storage.loadHabit("running");
 		expect(stale?.completions).toHaveLength(0);
 
-		// clearCache → 再ロード → 同期済みの内容が反映される
+		// clearCache → 再ロード → vault.read で同期済みの内容が反映される
 		storage.clearCache();
 		const after = await storage.loadHabit("running");
 		expect(after?.completions).toContain("2024-06-01");
@@ -305,46 +303,40 @@ describe("loadAllHabits", () => {
 // ---------------------------------------------------------------------------
 
 describe("clearCache: ローカル書き込みは evict されない（更新ボタン後もチェックが維持される）", () => {
-	it("[バグ再現] ローカルでチェック後に clearCache すると vault.cachedRead が古くてもチェックが維持される", async () => {
+	it("[バグ再現] ローカルでチェック後に clearCache しても、vault.read が古くてもチェックが維持される", async () => {
 		const today = daysAgo(0);
 		const { storage, vault } = createMockEnv({
 			"habits/running.md": buildFileContent("Running", "", "2024-01-01", []),
 		});
 
-		// vault.cachedRead が常に古いデータを返す（mobile での vault.modify 遅延を模倣）
-		vault.cachedRead.mockImplementation(async () =>
-			buildFileContent("Running", "", "2024-01-01", [])
-		);
+		// vault.read が常に古いデータを返す（mobile での vault.modify 遅延を模倣）
 		vault.read.mockImplementation(async () =>
 			buildFileContent("Running", "", "2024-01-01", [])
 		);
 
-		// ローカルでチェック → habitCache 更新
+		// ローカルでチェック → habitCache 更新（localWrites に登録）
 		await storage.setCompletion("running", today, true);
 
-		// 更新ボタン相当: clearCache → vault から再読み（vault は古い）
-		// ローカル書き込みエントリは evict されないので habitCache から返る
+		// 更新ボタン相当: clearCache → ローカル書き込み済みなので habitCache を維持 → チェック維持
 		storage.clearCache();
 		const habits = await storage.loadAllHabits();
 		const habit = habits.find(h => h.name === "running");
 		expect(habit?.completions).toContain(today);
 	});
 
-	it("ローカル未書き込みの習慣は clearCache 後に vault から再読みされる（他デバイス同期が反映される）", async () => {
+	it("ローカル未書き込みの習慣は clearCache 後に vault.read から再読みされる（他デバイス同期が反映される）", async () => {
 		const syncedDate = "2025-06-01";
-		const { storage, vault } = createMockEnv({
+		const { storage, fs } = createMockEnv({
 			"habits/yoga.md": buildFileContent("Yoga", "", "2024-01-01", []),
 		});
 
 		// 初回ロード（ローカル書き込みなし）
 		await storage.loadAllHabits();
 
-		// 他デバイスが同期 → vault.cachedRead が新しい内容を返すようになる
-		vault.cachedRead.mockImplementation(async () =>
-			buildFileContent("Yoga", "", "2024-01-01", [syncedDate])
-		);
+		// 他デバイスが同期 → ディスク（fs）が更新される
+		fs.set("habits/yoga.md", buildFileContent("Yoga", "", "2024-01-01", [syncedDate]));
 
-		// clearCache → yoga はローカル未書き込みなので evict → vault から再読み → 同期内容が反映される
+		// clearCache → yoga はローカル未書き込みなので evict → vault.read で再読み → 同期内容が反映
 		storage.clearCache();
 		const habits = await storage.loadAllHabits();
 		const habit = habits.find(h => h.name === "yoga");
@@ -355,33 +347,27 @@ describe("clearCache: ローカル書き込みは evict されない（更新ボ
 		const localDate = daysAgo(0);
 		const syncedDate = "2025-05-01";
 
-		const { storage, vault } = createMockEnv({
+		const { storage, vault, fs } = createMockEnv({
 			"habits/running.md": buildFileContent("Running", "", "2024-01-01", []),
 			"habits/yoga.md": buildFileContent("Yoga", "", "2024-01-02", []),
 		});
 
 		// 初回ロード
 		await storage.loadAllHabits();
-		vault.cachedRead.mockClear();
-		vault.read.mockClear();
 
 		// このデバイスで running をチェック
 		await storage.setCompletion("running", localDate, true);
 
-		// running は vault が古いままを返す（書き込み遅延）
-		// yoga は他デバイスが同期済み
-		vault.cachedRead.mockImplementation(async (file: any) => {
+		// running: vault.read が古いデータを返し続ける（vault.modify の書き込み遅延を模倣）
+		vault.read.mockImplementation(async (file: any) => {
 			if (file.path === "habits/running.md") {
 				return buildFileContent("Running", "", "2024-01-01", []); // 古い
 			}
-			return buildFileContent("Yoga", "", "2024-01-02", [syncedDate]); // 同期済み
+			return fs.get(file.path) ?? "";
 		});
-		vault.read.mockImplementation(async (file: any) => {
-			if (file.path === "habits/running.md") {
-				return buildFileContent("Running", "", "2024-01-01", []);
-			}
-			return buildFileContent("Yoga", "", "2024-01-02", [syncedDate]);
-		});
+
+		// yoga: 他デバイスが同期 → ディスク（fs）が更新される
+		fs.set("habits/yoga.md", buildFileContent("Yoga", "", "2024-01-02", [syncedDate]));
 
 		// 更新ボタン相当
 		storage.clearCache();
@@ -392,7 +378,7 @@ describe("clearCache: ローカル書き込みは evict されない（更新ボ
 
 		// running はローカル書き込みなので habitCache から → チェック維持
 		expect(running?.completions).toContain(localDate);
-		// yoga はローカル未書き込みなので vault から → 同期内容が反映
+		// yoga はローカル未書き込みなので vault.read から → 同期内容が反映
 		expect(yoga?.completions).toContain(syncedDate);
 	});
 });

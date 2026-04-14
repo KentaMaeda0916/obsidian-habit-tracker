@@ -168,7 +168,7 @@ if (sorted.length > 0) {
 		}
 		const file = this.app.vault.getAbstractFileByPath(this.habitPath(name));
 		if (!(file instanceof TFile)) return null;
-		const content = await this.app.vault.cachedRead(file);
+		const content = await this.app.vault.read(file);
 		const habit = this.parseContent(content, name);
 		this.habitCache.set(name, { ...habit, completions: [...habit.completions] });
 		return habit;
