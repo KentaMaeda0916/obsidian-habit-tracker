@@ -30,7 +30,7 @@ export class HabitView extends ItemView {
 	}
 
 	async onOpen() {
-		this.addAction("refresh-cw", "再読み込み", () => this.enqueue(() => this.reload()));
+		this.addAction("refresh-cw", "再読み込み", () => this.enqueue(() => this.reload(true)));
 		await this.reload();
 	}
 
@@ -44,7 +44,10 @@ export class HabitView extends ItemView {
 	}
 
 	/** ストレージから習慣を読み込んで画面を更新する */
-	private async reload(): Promise<void> {
+	private async reload(forceRefresh = false): Promise<void> {
+		if (forceRefresh) {
+			this.plugin.storage.clearCache();
+		}
 		this.habits = await this.plugin.storage.loadAllHabits();
 		this.renderUI();
 	}
@@ -72,7 +75,7 @@ export class HabitView extends ItemView {
 		const refreshBtn = headerTop.createEl("button", { cls: "habit-tracker-refresh-btn" });
 		refreshBtn.setAttribute("aria-label", "再読み込み");
 		refreshBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>`;
-		refreshBtn.addEventListener("click", () => this.enqueue(() => this.reload()));
+		refreshBtn.addEventListener("click", () => this.enqueue(() => this.reload(true)));
 		header.createEl("p", { text: displayDate, cls: "habit-tracker-date" });
 
 		// 習慣リスト
