@@ -24,6 +24,8 @@ export function todayString(): string {
 export class HabitStorage {
 	private app: App;
 	private plugin: HabitTrackerPlugin;
+	/** ローカル書き込み後の読み返しに使う自前キャッシュ */
+	private habitCache = new Map<string, Habit>();
 
 	constructor(plugin: HabitTrackerPlugin) {
 		this.plugin = plugin;
@@ -147,11 +149,22 @@ if (sorted.length > 0) {
 		return content.replace(/^---\n[\s\S]*?\n---\n/, newFrontmatter);
 	}
 
+	/** キャッシュをクリアする（クロスデバイス同期後の明示的な再読み込みに使用） */
+	clearCache(): void {
+		this.habitCache.clear();
+	}
+
 	async loadHabit(name: string): Promise<Habit | null> {
+		if (this.habitCache.has(name)) {
+			const cached = this.habitCache.get(name)!;
+			return { ...cached, completions: [...cached.completions] };
+		}
 		const file = this.app.vault.getAbstractFileByPath(this.habitPath(name));
 		if (!(file instanceof TFile)) return null;
 		const content = await this.app.vault.read(file);
-		return this.parseContent(content, name);
+		const habit = this.parseContent(content, name);
+		this.habitCache.set(name, { ...habit, completions: [...habit.completions] });
+		return habit;
 	}
 
 	async saveHabit(habit: Habit): Promise<void> {
@@ -164,6 +177,8 @@ if (sorted.length > 0) {
 		} else {
 			await this.app.vault.create(path, this.buildFullContent(habit));
 		}
+		// 書き込み完了後すぐキャッシュを更新（vault の書き込みタイミングに依存しないため）
+		this.habitCache.set(habit.name, { ...habit, completions: [...habit.completions] });
 	}
 
 	async loadAllHabits(): Promise<Habit[]> {
@@ -174,8 +189,14 @@ if (sorted.length > 0) {
 
 		const habits = await Promise.all(
 			files.map(async f => {
+				if (this.habitCache.has(f.basename)) {
+					const cached = this.habitCache.get(f.basename)!;
+					return { ...cached, completions: [...cached.completions] };
+				}
 				const content = await this.app.vault.read(f);
-				return this.parseContent(content, f.basename);
+				const habit = this.parseContent(content, f.basename);
+				this.habitCache.set(f.basename, { ...habit, completions: [...habit.completions] });
+				return habit;
 			})
 		);
 
@@ -197,6 +218,7 @@ if (sorted.length > 0) {
 		if (file instanceof TFile) {
 			await this.app.vault.delete(file);
 		}
+		this.habitCache.delete(name);
 	}
 
 	/** 指定日の完了状態を冪等にセットする */
