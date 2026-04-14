@@ -1,7 +1,7 @@
 {
 	"id": "habit-tracker",
 	"name": "Habit Tracker",
-	"version": "1.1.6",
+	"version": "1.1.7",
 	"minAppVersion": "0.15.0",
 	"description": "Simple habit tracker with one-tap check-in. Stores data in per-habit Markdown files compatible with Dataview.",
 	"author": "maedakenta",
