@@ -24,6 +24,8 @@ export function todayString(): string {
 export class HabitStorage {
 	private app: App;
 	private plugin: HabitTrackerPlugin;
+	/** vault キャッシュに頼らず確実に最新状態を保持する自前キャッシュ */
+	private habitCache = new Map<string, Habit>();
 
 	constructor(plugin: HabitTrackerPlugin) {
 		this.plugin = plugin;
@@ -148,10 +150,16 @@ if (sorted.length > 0) {
 	}
 
 	async loadHabit(name: string): Promise<Habit | null> {
+		if (this.habitCache.has(name)) {
+			const cached = this.habitCache.get(name)!;
+			return { ...cached, completions: [...cached.completions] };
+		}
 		const file = this.app.vault.getAbstractFileByPath(this.habitPath(name));
 		if (!(file instanceof TFile)) return null;
 		const content = await this.app.vault.cachedRead(file);
-		return this.parseContent(content, name);
+		const habit = this.parseContent(content, name);
+		this.habitCache.set(name, { ...habit, completions: [...habit.completions] });
+		return habit;
 	}
 
 	async saveHabit(habit: Habit): Promise<void> {
@@ -164,6 +172,8 @@ if (sorted.length > 0) {
 		} else {
 			await this.app.vault.create(path, this.buildFullContent(habit));
 		}
+		// vault キャッシュに頼らず自前キャッシュを即時更新
+		this.habitCache.set(habit.name, { ...habit, completions: [...habit.completions] });
 	}
 
 	async loadAllHabits(): Promise<Habit[]> {
@@ -174,8 +184,14 @@ if (sorted.length > 0) {
 
 		const habits = await Promise.all(
 			files.map(async f => {
+				if (this.habitCache.has(f.basename)) {
+					const cached = this.habitCache.get(f.basename)!;
+					return { ...cached, completions: [...cached.completions] };
+				}
 				const content = await this.app.vault.cachedRead(f);
-				return this.parseContent(content, f.basename);
+				const habit = this.parseContent(content, f.basename);
+				this.habitCache.set(f.basename, { ...habit, completions: [...habit.completions] });
+				return habit;
 			})
 		);
 
@@ -197,23 +213,24 @@ if (sorted.length > 0) {
 		if (file instanceof TFile) {
 			await this.app.vault.delete(file);
 		}
+		this.habitCache.delete(name);
 	}
 
-	/** チェックのトグル。新しい状態（true=完了）を返す */
-	async toggleCompletion(habitName: string, date: string): Promise<boolean> {
+	/** 指定日の完了状態を冪等にセットする */
+	async setCompletion(habitName: string, date: string, completed: boolean): Promise<void> {
 		const habit = await this.loadHabit(habitName);
-		if (!habit) return false;
+		if (!habit) return;
 
-		const idx = habit.completions.indexOf(date);
-		if (idx >= 0) {
-			habit.completions.splice(idx, 1);
-		} else {
+		const hasDate = habit.completions.includes(date);
+		if (completed === hasDate) return; // 既に希望状態なら no-op
+
+		if (completed) {
 			habit.completions.push(date);
 			habit.completions.sort();
+		} else {
+			habit.completions = habit.completions.filter(d => d !== date);
 		}
-
 		await this.saveHabit(habit);
-		return idx < 0;
 	}
 
 	/** 指定日からの連続達成日数を計算（ローカルタイムゾーン基準） */

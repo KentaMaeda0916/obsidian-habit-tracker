@@ -9,7 +9,8 @@ export class HabitView extends ItemView {
 	private plugin: HabitTrackerPlugin;
 	private habits: Habit[] = [];
 	private today = "";
-	private pendingSave: Promise<void> = Promise.resolve();
+	/** 全操作を直列実行するキュー */
+	private queue: Promise<void> = Promise.resolve();
 
 	constructor(leaf: WorkspaceLeaf, plugin: HabitTrackerPlugin) {
 		super(leaf);
@@ -29,20 +30,25 @@ export class HabitView extends ItemView {
 	}
 
 	async onOpen() {
-		this.addAction("refresh-cw", "再読み込み", () => this.render());
-		await this.render();
+		this.addAction("refresh-cw", "再読み込み", () => this.enqueue(() => this.reload()));
+		await this.reload();
 	}
 
 	async onClose() {}
 
-	/** ディスクから全習慣を再読み込みして表示を更新 */
-	async render() {
-		await this.pendingSave;
+	/** 操作をキューに積んで直列実行する */
+	private enqueue(fn: () => Promise<void>): void {
+		this.queue = this.queue
+			.then(fn)
+			.catch(err => console.error("[HabitTracker]", err));
+	}
+
+	/** ストレージから習慣を読み込んで画面を更新する */
+	private async reload(): Promise<void> {
 		this.habits = await this.plugin.storage.loadAllHabits();
 		this.renderUI();
 	}
 
-	/** キャッシュ済みデータで表示のみ更新（ディスク読み込みなし） */
 	private renderUI() {
 		// 日付跨ぎに対応するため毎回取得
 		this.today = todayString();
@@ -66,7 +72,7 @@ export class HabitView extends ItemView {
 		const refreshBtn = headerTop.createEl("button", { cls: "habit-tracker-refresh-btn" });
 		refreshBtn.setAttribute("aria-label", "再読み込み");
 		refreshBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>`;
-		refreshBtn.addEventListener("click", () => this.render());
+		refreshBtn.addEventListener("click", () => this.enqueue(() => this.reload()));
 		header.createEl("p", { text: displayDate, cls: "habit-tracker-date" });
 
 		// 習慣リスト
@@ -91,21 +97,12 @@ export class HabitView extends ItemView {
 			checkbox.type = "checkbox";
 			checkbox.checked = isCompleted;
 			checkbox.addEventListener("change", () => {
-				this.pendingSave = this.pendingSave
-					.then(async () => {
-						// in-memory を更新してディスク再読み込みを避ける
-						const newState = await this.plugin.storage.toggleCompletion(habit.name, this.today);
-						if (newState) {
-							habit.completions.push(this.today);
-							habit.completions.sort();
-						} else {
-							habit.completions = habit.completions.filter(d => d !== this.today);
-						}
-						this.renderUI();
-					})
-					.catch(err => {
-						console.error("[HabitTracker] toggleCompletion failed:", err);
-					});
+				// change 時点のチェック状態を確定値として使う（toggle ではなく set）
+				const completed = checkbox.checked;
+				this.enqueue(async () => {
+					await this.plugin.storage.setCompletion(habit.name, this.today, completed);
+					await this.reload();
+				});
 			});
 
 			const labelEl = itemEl.createEl("div", { cls: "habit-tracker-label" });
@@ -130,7 +127,7 @@ export class HabitView extends ItemView {
 		});
 		addBtn.addEventListener("click", () => {
 			new HabitModal(this.app, this.plugin, async () => {
-				await this.render();
+				this.enqueue(() => this.reload());
 			}).open();
 		});
 	}
