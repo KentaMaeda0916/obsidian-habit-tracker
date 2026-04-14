@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { HabitStorage, type Habit, localDateString } from "../src/HabitStorage";
+import * as ObsidianModule from "obsidian";
 
-// obsidian モジュールをスタブ化
+// obsidian モジュールをスタブ化（vi.mock はホイストされるため import より先に実行される）
 vi.mock("obsidian", () => {
 	class TFile {
 		path: string;
@@ -19,8 +20,8 @@ vi.mock("obsidian", () => {
 	return { TFile, normalizePath: (p: string) => p, App: class {} };
 });
 
-// Obsidian の TFile クラスをインポート（モック済み）
-import { TFile } from "obsidian";
+// モック済みの TFile クラスを取得（instanceof チェックのために実インスタンスが必要）
+const TFileMock = ObsidianModule.TFile as unknown as new (path: string) => any;
 
 // ---------------------------------------------------------------------------
 // テスト用ファクトリ
@@ -32,7 +33,7 @@ function createMockEnv(initialFiles: Record<string, string> = {}) {
 
 	const vault = {
 		getAbstractFileByPath: vi.fn((path: string) =>
-			fs.has(path) ? new TFile(path) : null
+			fs.has(path) ? new TFileMock(path) : null
 		),
 		read: vi.fn(async (file: any) => fs.get(file.path) ?? ""),
 		cachedRead: vi.fn(async (file: any) => fs.get(file.path) ?? ""),
@@ -45,7 +46,7 @@ function createMockEnv(initialFiles: Record<string, string> = {}) {
 		delete: vi.fn(async (file: any) => {
 			fs.delete(file.path);
 		}),
-		getFiles: vi.fn(() => [...fs.keys()].map(p => new TFile(p))),
+		getFiles: vi.fn(() => [...fs.keys()].map(p => new TFileMock(p))),
 		createFolder: vi.fn(async () => {}),
 	};
 
@@ -298,6 +299,103 @@ describe("loadAllHabits", () => {
 });
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// バグ再現テスト: clearCache がローカル書き込みを誤って消すケース
+// ---------------------------------------------------------------------------
+
+describe("clearCache: ローカル書き込みは evict されない（更新ボタン後もチェックが維持される）", () => {
+	it("[バグ再現] ローカルでチェック後に clearCache すると vault.cachedRead が古くてもチェックが維持される", async () => {
+		const today = daysAgo(0);
+		const { storage, vault } = createMockEnv({
+			"habits/running.md": buildFileContent("Running", "", "2024-01-01", []),
+		});
+
+		// vault.cachedRead が常に古いデータを返す（mobile での vault.modify 遅延を模倣）
+		vault.cachedRead.mockImplementation(async () =>
+			buildFileContent("Running", "", "2024-01-01", [])
+		);
+		vault.read.mockImplementation(async () =>
+			buildFileContent("Running", "", "2024-01-01", [])
+		);
+
+		// ローカルでチェック → habitCache 更新
+		await storage.setCompletion("running", today, true);
+
+		// 更新ボタン相当: clearCache → vault から再読み（vault は古い）
+		// ローカル書き込みエントリは evict されないので habitCache から返る
+		storage.clearCache();
+		const habits = await storage.loadAllHabits();
+		const habit = habits.find(h => h.name === "running");
+		expect(habit?.completions).toContain(today);
+	});
+
+	it("ローカル未書き込みの習慣は clearCache 後に vault から再読みされる（他デバイス同期が反映される）", async () => {
+		const syncedDate = "2025-06-01";
+		const { storage, vault } = createMockEnv({
+			"habits/yoga.md": buildFileContent("Yoga", "", "2024-01-01", []),
+		});
+
+		// 初回ロード（ローカル書き込みなし）
+		await storage.loadAllHabits();
+
+		// 他デバイスが同期 → vault.cachedRead が新しい内容を返すようになる
+		vault.cachedRead.mockImplementation(async () =>
+			buildFileContent("Yoga", "", "2024-01-01", [syncedDate])
+		);
+
+		// clearCache → yoga はローカル未書き込みなので evict → vault から再読み → 同期内容が反映される
+		storage.clearCache();
+		const habits = await storage.loadAllHabits();
+		const habit = habits.find(h => h.name === "yoga");
+		expect(habit?.completions).toContain(syncedDate);
+	});
+
+	it("ローカル書き込みあり + 他デバイス変更あり → 両方反映される", async () => {
+		const localDate = daysAgo(0);
+		const syncedDate = "2025-05-01";
+
+		const { storage, vault } = createMockEnv({
+			"habits/running.md": buildFileContent("Running", "", "2024-01-01", []),
+			"habits/yoga.md": buildFileContent("Yoga", "", "2024-01-02", []),
+		});
+
+		// 初回ロード
+		await storage.loadAllHabits();
+		vault.cachedRead.mockClear();
+		vault.read.mockClear();
+
+		// このデバイスで running をチェック
+		await storage.setCompletion("running", localDate, true);
+
+		// running は vault が古いままを返す（書き込み遅延）
+		// yoga は他デバイスが同期済み
+		vault.cachedRead.mockImplementation(async (file: any) => {
+			if (file.path === "habits/running.md") {
+				return buildFileContent("Running", "", "2024-01-01", []); // 古い
+			}
+			return buildFileContent("Yoga", "", "2024-01-02", [syncedDate]); // 同期済み
+		});
+		vault.read.mockImplementation(async (file: any) => {
+			if (file.path === "habits/running.md") {
+				return buildFileContent("Running", "", "2024-01-01", []);
+			}
+			return buildFileContent("Yoga", "", "2024-01-02", [syncedDate]);
+		});
+
+		// 更新ボタン相当
+		storage.clearCache();
+		const habits = await storage.loadAllHabits();
+
+		const running = habits.find(h => h.name === "running");
+		const yoga = habits.find(h => h.name === "yoga");
+
+		// running はローカル書き込みなので habitCache から → チェック維持
+		expect(running?.completions).toContain(localDate);
+		// yoga はローカル未書き込みなので vault から → 同期内容が反映
+		expect(yoga?.completions).toContain(syncedDate);
+	});
+});
 
 describe("deleteHabit", () => {
 	it("削除後に loadHabit は null を返す", async () => {

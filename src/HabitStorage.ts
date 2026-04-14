@@ -26,6 +26,8 @@ export class HabitStorage {
 	private plugin: HabitTrackerPlugin;
 	/** ローカル書き込み後の読み返しに使う自前キャッシュ */
 	private habitCache = new Map<string, Habit>();
+	/** このセッションでローカル書き込みした習慣名（clearCache で evict しない） */
+	private localWrites = new Set<string>();
 
 	constructor(plugin: HabitTrackerPlugin) {
 		this.plugin = plugin;
@@ -149,9 +151,14 @@ if (sorted.length > 0) {
 		return content.replace(/^---\n[\s\S]*?\n---\n/, newFrontmatter);
 	}
 
-	/** キャッシュをクリアする（クロスデバイス同期後の明示的な再読み込みに使用） */
+	/** キャッシュをクリアする（クロスデバイス同期後の明示的な再読み込みに使用）
+	 *  ローカル書き込み済みエントリは evict しない（vault の書き込みタイミングに依存しないため） */
 	clearCache(): void {
-		this.habitCache.clear();
+		for (const name of [...this.habitCache.keys()]) {
+			if (!this.localWrites.has(name)) {
+				this.habitCache.delete(name);
+			}
+		}
 	}
 
 	async loadHabit(name: string): Promise<Habit | null> {
@@ -178,6 +185,7 @@ if (sorted.length > 0) {
 			await this.app.vault.create(path, this.buildFullContent(habit));
 		}
 		// 書き込み完了後すぐキャッシュを更新（vault の書き込みタイミングに依存しないため）
+		this.localWrites.add(habit.name);
 		this.habitCache.set(habit.name, { ...habit, completions: [...habit.completions] });
 	}
 
@@ -218,6 +226,7 @@ if (sorted.length > 0) {
 		if (file instanceof TFile) {
 			await this.app.vault.delete(file);
 		}
+		this.localWrites.delete(name);
 		this.habitCache.delete(name);
 	}
 
