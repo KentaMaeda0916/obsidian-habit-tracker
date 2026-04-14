@@ -24,8 +24,6 @@ export function todayString(): string {
 export class HabitStorage {
 	private app: App;
 	private plugin: HabitTrackerPlugin;
-	/** vault キャッシュに頼らず確実に最新状態を保持する自前キャッシュ */
-	private habitCache = new Map<string, Habit>();
 
 	constructor(plugin: HabitTrackerPlugin) {
 		this.plugin = plugin;
@@ -150,16 +148,10 @@ if (sorted.length > 0) {
 	}
 
 	async loadHabit(name: string): Promise<Habit | null> {
-		if (this.habitCache.has(name)) {
-			const cached = this.habitCache.get(name)!;
-			return { ...cached, completions: [...cached.completions] };
-		}
 		const file = this.app.vault.getAbstractFileByPath(this.habitPath(name));
 		if (!(file instanceof TFile)) return null;
-		const content = await this.app.vault.cachedRead(file);
-		const habit = this.parseContent(content, name);
-		this.habitCache.set(name, { ...habit, completions: [...habit.completions] });
-		return habit;
+		const content = await this.app.vault.read(file);
+		return this.parseContent(content, name);
 	}
 
 	async saveHabit(habit: Habit): Promise<void> {
@@ -172,8 +164,6 @@ if (sorted.length > 0) {
 		} else {
 			await this.app.vault.create(path, this.buildFullContent(habit));
 		}
-		// vault キャッシュに頼らず自前キャッシュを即時更新
-		this.habitCache.set(habit.name, { ...habit, completions: [...habit.completions] });
 	}
 
 	async loadAllHabits(): Promise<Habit[]> {
@@ -184,14 +174,8 @@ if (sorted.length > 0) {
 
 		const habits = await Promise.all(
 			files.map(async f => {
-				if (this.habitCache.has(f.basename)) {
-					const cached = this.habitCache.get(f.basename)!;
-					return { ...cached, completions: [...cached.completions] };
-				}
-				const content = await this.app.vault.cachedRead(f);
-				const habit = this.parseContent(content, f.basename);
-				this.habitCache.set(f.basename, { ...habit, completions: [...habit.completions] });
-				return habit;
+				const content = await this.app.vault.read(f);
+				return this.parseContent(content, f.basename);
 			})
 		);
 
@@ -213,7 +197,6 @@ if (sorted.length > 0) {
 		if (file instanceof TFile) {
 			await this.app.vault.delete(file);
 		}
-		this.habitCache.delete(name);
 	}
 
 	/** 指定日の完了状態を冪等にセットする */
