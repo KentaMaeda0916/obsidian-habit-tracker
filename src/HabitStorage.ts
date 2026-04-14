@@ -150,7 +150,7 @@ if (sorted.length > 0) {
 	async loadHabit(name: string): Promise<Habit | null> {
 		const file = this.app.vault.getAbstractFileByPath(this.habitPath(name));
 		if (!(file instanceof TFile)) return null;
-		const content = await this.app.vault.read(file);
+		const content = await this.app.vault.cachedRead(file);
 		return this.parseContent(content, name);
 	}
 
@@ -174,7 +174,7 @@ if (sorted.length > 0) {
 
 		const habits = await Promise.all(
 			files.map(async f => {
-				const content = await this.app.vault.read(f);
+				const content = await this.app.vault.cachedRead(f);
 				return this.parseContent(content, f.basename);
 			})
 		);
