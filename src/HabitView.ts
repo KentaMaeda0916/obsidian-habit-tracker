@@ -9,6 +9,7 @@ export class HabitView extends ItemView {
 	private plugin: HabitTrackerPlugin;
 	private habits: Habit[] = [];
 	private today = "";
+	private pendingSave: Promise<void> = Promise.resolve();
 
 	constructor(leaf: WorkspaceLeaf, plugin: HabitTrackerPlugin) {
 		super(leaf);
@@ -36,6 +37,7 @@ export class HabitView extends ItemView {
 
 	/** ディスクから全習慣を再読み込みして表示を更新 */
 	async render() {
+		await this.pendingSave;
 		this.habits = await this.plugin.storage.loadAllHabits();
 		this.renderUI();
 	}
@@ -88,9 +90,22 @@ export class HabitView extends ItemView {
 			const checkbox = itemEl.createEl("input");
 			checkbox.type = "checkbox";
 			checkbox.checked = isCompleted;
-			checkbox.addEventListener("change", async () => {
-				await this.plugin.storage.toggleCompletion(habit.name, this.today);
-				await this.render();
+			checkbox.addEventListener("change", () => {
+				this.pendingSave = this.pendingSave
+					.then(async () => {
+						// in-memory を更新してディスク再読み込みを避ける
+						const newState = await this.plugin.storage.toggleCompletion(habit.name, this.today);
+						if (newState) {
+							habit.completions.push(this.today);
+							habit.completions.sort();
+						} else {
+							habit.completions = habit.completions.filter(d => d !== this.today);
+						}
+						this.renderUI();
+					})
+					.catch(err => {
+						console.error("[HabitTracker] toggleCompletion failed:", err);
+					});
 			});
 
 			const labelEl = itemEl.createEl("div", { cls: "habit-tracker-label" });
